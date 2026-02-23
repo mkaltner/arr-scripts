@@ -89,9 +89,6 @@ TidalClientSetup () {
 		rm -rf "$videoDownloadPath"/incomplete/*
 	fi
 	
-	#log "TIDAL :: Upgrade tidal-dl to newer version..."
-	#pip3 install tidal-dl==2022.07.06.1 --no-cache-dir &>/dev/null
-	
 }
 
 TidaldlStatusCheck () {
@@ -114,6 +111,7 @@ TidalClientTest () {
 	while [ $i -lt 3 ]; do
 		i=$(( $i + 1 ))
   		TidaldlStatusCheck
+		XDG_CONFIG_HOME=/config/extended tidal-dl-ng cfg download_base_path "$videoDownloadPath/incomplete" 2>&1 | tee -a "/config/logs/$logFileName"
 		XDG_CONFIG_HOME=/config/extended tidal-dl-ng dl "https://tidal.com/browse/album/$tidalClientTestDownloadId" 2>&1 | tee -a "/config/logs/$logFileName"
 		downloadCount=$(find "$videoDownloadPath"/incomplete -type f -regex ".*/.*\.\(flac\|opus\|m4a\|mp3\)" | wc -l)
 		if [ $downloadCount -le 0 ]; then
@@ -285,8 +283,8 @@ VideoProcess () {
 			videoArtists="$(echo "$videoData" | jq -r ".artists[]")"
 			videoArtistsIds="$(echo "$videoArtists" | jq -r ".id")"
 			videoType=""
-   			# clean/clear download folder
-   			rm -rf "$videoDownloadPath"/*
+   			# clean/clear incomplete download folder
+   			rm -rf "$videoDownloadPath/incomplete"/*
       
       			log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Processing..."
 
@@ -363,7 +361,7 @@ VideoProcess () {
 			downloadFailed=false
 			log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Downloading..."
 			XDG_CONFIG_HOME=/config/extended tidal-dl-ng cfg download_base_path "$videoDownloadPath/incomplete" 2>&1 | tee -a "/config/logs/$logFileName"
-            XDG_CONFIG_HOME=/config/extended tidal-dl-ng dl "$videoUrl" 2>&1 | tee -a "/config/logs/$logFileName"
+			XDG_CONFIG_HOME=/config/extended tidal-dl-ng dl "$videoUrl" 2>&1 | tee -a "/config/logs/$logFileName"
 			
 			# Move files and clean up subdirectories first
 			find "$videoDownloadPath/incomplete" -type f -exec mv "{}" "$videoDownloadPath/incomplete"/ \; 2>/dev/null
@@ -396,7 +394,7 @@ VideoProcess () {
 					break
 				fi
 
-				if [ "$videoDownloadPath/incomplete" ]; then
+				if [ -d "$videoDownloadPath/incomplete" ]; then
 					rm -rf "$videoDownloadPath/incomplete"
 				fi
 
@@ -454,12 +452,12 @@ VideoProcess () {
 				chmod 666 "/config/extended/logs/tidal-video/$id"
 				if [ $downloadedFileSize -lt $existingFileSize ]; then
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Downloaded file is smaller than existing file ($downloadedFileSize -lt $existingFileSize), skipping..."
-					rm -rf "$videoDownloadPath"/*
+					rm -rf "$videoDownloadPath/incomplete"/*
 					continue
 				fi
 				if [ $downloadedFileSize == $existingFileSize ]; then 
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Existing File is the same size as the download ($downloadedFileSize = $existingFileSize), skipping..."
-					rm -rf "$videoDownloadPath"/*
+					rm -rf "$videoDownloadPath/incomplete"/*
 					continue
 				fi
 				if [ $downloadedFileSize -gt $existingFileSize  ]; then
@@ -544,8 +542,8 @@ VideoProcess () {
 			touch /config/extended/logs/tidal-video/$id
 			chmod 666 "/config/extended/logs/tidal-video/$id"
 
-			# clean/clear download folder
-   			rm -rf "$videoDownloadPath"/*
+			# clean/clear incomplete download folder
+   			rm -rf "$videoDownloadPath/incomplete"/*
 		done
 	done
 }
