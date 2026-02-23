@@ -75,6 +75,7 @@ Configuration () {
 	videoDownloadPath="$downloadPath/videos"
 	log "CONFIG :: Download Location :: $videoDownloadPath"
 	log "CONFIG :: Music Video Location :: $videoPath"
+	log "CONFIG :: Video Naming :: Plex format (Artist - Title)"
 	log "CONFIG :: Subtitle Language set to: $youtubeSubtitleLanguage"
 	log "CONFIG :: Video container set to format: $videoContainer"
 	if [ "$videoContainer" == "mkv" ]; then
@@ -156,17 +157,16 @@ ImvdbCache () {
 		imvdbProcessCount=$(( $imvdbProcessCount + 1 ))
 		imvdbVideoUrlSlug=$(basename "$imvdbVideoUrl")
 		imvdbVideoData="/config/extended/cache/imvdb/$lidarrArtistMusicbrainzId--$imvdbVideoUrlSlug.json"
-		#echo "$imvdbVideoUrl :: $imvdbVideoUrlSlug :: $imvdbVideoId"
 
 		log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${artistImvdbVideoUrlsCount} :: Caching video data..."
 		if [ -f "$imvdbVideoData" ]; then
-			if [ ! -s "$imvdbVideoData" ]; then # if empty, delete file
+			if [ ! -s "$imvdbVideoData" ]; then
 				rm "$imvdbVideoData"
 			fi
 		fi
 
 		if [ -f "$imvdbVideoData" ]; then
-			if jq -e . >/dev/null 2>&1 <<<"$(cat "$imvdbVideoData")"; then # verify file is valid json
+			if jq -e . >/dev/null 2>&1 <<<"$(cat "$imvdbVideoData")"; then
 				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${artistImvdbVideoUrlsCount} :: Video Data already downloaded"
 				continue
 			fi
@@ -176,7 +176,6 @@ ImvdbCache () {
 			count=0
 			until false; do
 				count=$(( $count + 1 ))
-				#echo "$count"
 				if [ ! -f "$imvdbVideoData" ]; then
 					imvdbVideoId=$(curl -s "$imvdbVideoUrl" --compressed -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Upgrade-Insecure-Requests: 1' -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Site: none' -H 'Sec-Fetch-User: ?1' | grep "<p>ID:" | grep -o "[[:digit:]]*")
 					imvdbVideoJsonUrl="https://imvdb.com/api/v1/video/$imvdbVideoId?include=sources,featured,credits"
@@ -208,6 +207,7 @@ ImvdbCache () {
 }
 
 DownloadVideo () {
+	# $1 = videoDownloadUrl, $2 = plexVideoFileName (Artist - Title)
 	if [ -d "$videoDownloadPath/incomplete" ]; then
 		rm -rf "$videoDownloadPath/incomplete"
 	fi
@@ -228,17 +228,17 @@ DownloadVideo () {
 
 	if echo "$1" | grep -i "youtube" | read; then
 		if [ $videoContainer = mkv ]; then
-			yt-dlp -f "$videoFormat" --no-video-multistreams -o "$videoDownloadPath/incomplete/${2}${3}" $ytdlpConfigurableArgs --embed-subs --sub-lang $youtubeSubtitleLanguage --merge-output-format mkv --remux-video mkv --no-mtime --geo-bypass "$1"
-			if [ -f "$videoDownloadPath/incomplete/${2}${3}.mkv" ]; then
-				chmod 666 "$videoDownloadPath/incomplete/${2}${3}.mkv"
+			yt-dlp -f "$videoFormat" --no-video-multistreams -o "$videoDownloadPath/incomplete/${2}" $ytdlpConfigurableArgs --embed-subs --sub-lang $youtubeSubtitleLanguage --merge-output-format mkv --remux-video mkv --no-mtime --geo-bypass "$1"
+			if [ -f "$videoDownloadPath/incomplete/${2}.mkv" ]; then
+				chmod 666 "$videoDownloadPath/incomplete/${2}.mkv"
 				downloadFailed=false
 			else
 				downloadFailed=true
 			fi
 		else
-			yt-dlp --format-sort ext:mp4:m4a --merge-output-format mp4 --no-video-multistreams -o "$videoDownloadPath/incomplete/${2}${3}" $ytdlpConfigurableArgs --embed-subs --sub-lang $youtubeSubtitleLanguage --no-mtime --geo-bypass "$1"
-			if [ -f "$videoDownloadPath/incomplete/${2}${3}.mp4" ]; then
-				chmod 666 "$videoDownloadPath/incomplete/${2}${3}.mp4"
+			yt-dlp --format-sort ext:mp4:m4a --merge-output-format mp4 --no-video-multistreams -o "$videoDownloadPath/incomplete/${2}" $ytdlpConfigurableArgs --embed-subs --sub-lang $youtubeSubtitleLanguage --no-mtime --geo-bypass "$1"
+			if [ -f "$videoDownloadPath/incomplete/${2}.mp4" ]; then
+				chmod 666 "$videoDownloadPath/incomplete/${2}.mp4"
 				downloadFailed=false
 			else
 				downloadFailed=true
@@ -248,8 +248,9 @@ DownloadVideo () {
 }
 
 DownloadThumb () {
-	curl -s "$1" -o "$videoDownloadPath/incomplete/${2}${3}.jpg"
-	chmod 666 "$videoDownloadPath/incomplete/${2}${3}.jpg"
+	# $1 = imageUrl, $2 = plexVideoFileName (Artist - Title)
+	curl -s "$1" -o "$videoDownloadPath/incomplete/${2}.jpg"
+	chmod 666 "$videoDownloadPath/incomplete/${2}.jpg"
 }
 
 VideoProcessWithSMA () {
@@ -286,6 +287,7 @@ VideoProcessWithSMA () {
 }
 
 VideoTagProcess () {
+	# $1 = videoTitleClean (for metadata TITLE), $2 = plexVideoFileName (for thumb path), $3 = videoYear
 	find "$videoDownloadPath/incomplete" -type f -regex ".*/.*\.\(mkv\|mp4\)" -print0 | while IFS= read -r -d '' video; do
 		count=$(($count+1))
 		file="${video}"
@@ -311,7 +313,7 @@ VideoTagProcess () {
 
 		if [[ $filenoext.$videoContainer == *.mkv ]]; then
 			mv "$filenoext.$videoContainer" "$filenoext-temp.$videoContainer"
-			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${1}${2} $3 :: Tagging file"
+			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${1} $3 :: Tagging file"
 			ffmpeg -y \
 				-i "$filenoext-temp.$videoContainer" \
 				-c copy \
@@ -323,16 +325,16 @@ VideoTagProcess () {
 				-metadata ARTIST="$lidarrArtistName" \
 				-metadata ALBUMARTIST="$lidarrArtistName" \
 				-metadata ENCODED_BY="lidarr-extended" \
-				-attach "$videoDownloadPath/incomplete/${1}${2}.jpg" -metadata:s:t mimetype=image/jpeg \
+				-attach "$videoDownloadPath/incomplete/${2}.jpg" -metadata:s:t mimetype=image/jpeg \
 				"$filenoext.$videoContainer" &>/dev/null
 			rm "$filenoext-temp.$videoContainer"
 			chmod 666 "$filenoext.$videoContainer"
 		else
 			mv "$filenoext.$videoContainer" "$filenoext-temp.$videoContainer"
-			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${1}${2} $3 :: Tagging file"
+			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${1} $3 :: Tagging file"
 			ffmpeg -y \
 				-i "$filenoext-temp.$videoContainer" \
-				-i "$videoDownloadPath/incomplete/${1}${2}.jpg" \
+				-i "$videoDownloadPath/incomplete/${2}.jpg" \
 				-map 1 \
 				-map 0 \
 				-c copy \
@@ -351,8 +353,10 @@ VideoTagProcess () {
 }
 
 VideoNfoWriter () {
+	# $1 = plexVideoFileName (Artist - Title), $2 = unused, $3 = imvdbVideoTitle,
+	# $4 = unused, $5 = source type, $6 = year, $7 = unused, $8 = videoSource
 	log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${3} :: Writing NFO"
-	nfo="$videoDownloadPath/incomplete/${1}${2}.nfo"
+	nfo="$videoDownloadPath/incomplete/${1}.nfo"
 	if [ -f "$nfo" ]; then
 		rm "$nfo"
 	fi
@@ -395,7 +399,7 @@ VideoNfoWriter () {
 	echo "		<artist>$lidarrArtistName</artist>" >> "$nfo"
 	echo "		<musicBrainzArtistID>$lidarrArtistMusicbrainzId</musicBrainzArtistID>" >> "$nfo"
 	echo "	</albumArtistCredits>" >> "$nfo"
-	echo "	<thumb>${1}${2}.jpg</thumb>" >> "$nfo"
+	echo "	<thumb>${1}.jpg</thumb>" >> "$nfo"
 	echo "	<source>$8</source>" >> "$nfo"
 	echo "</musicvideo>" >> "$nfo"
 	tidy -w 2000 -i -m -xml "$nfo" &>/dev/null
@@ -527,7 +531,6 @@ VideoProcess () {
 
 		if [ -z "$artistImvdbSlug" ]; then
 			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ERROR :: No IMVDB artist link found, skipping..."
-			# Create log of missing IMVDB url...
 			if [ ! -d "/config/extended/logs/video/imvdb-link-missing" ]; then
 				mkdir -p "/config/extended/logs/video/imvdb-link-missing"
 				chmod 777 "/config/extended/logs/video"
@@ -544,7 +547,6 @@ VideoProcess () {
 
 		if [ -d /config/extended/logs/video/complete ]; then
 			if [ -f "/config/extended/logs/video/complete/$lidarrArtistMusicbrainzId" ]; then
-				# Only update cache for artist if the completed log file is older than 7 days...
 				if [[ $(find "/config/extended/logs/video/complete/$lidarrArtistMusicbrainzId" -mtime +7 -print) ]]; then
 					ImvdbCache
 				fi
@@ -552,12 +554,10 @@ VideoProcess () {
 			ImvdbCache
 			fi
 		else
-			# Always run cache process if completed log folder does not exist
 			ImvdbCache
 		fi
 
 		if [ -d /config/extended/logs/video/complete ]; then
-			# If completed log file found for artist, end processing and skip...
 			if [ -f "/config/extended/logs/video/complete/$lidarrArtistMusicbrainzId" ]; then
 				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: Music Videos previously downloaded, skipping..."
 				continue
@@ -565,7 +565,6 @@ VideoProcess () {
 		fi
 
 		if [ ! -z "$artistImvdbSlug" ]; then
-			# Remove missing IMVDB log file, now that it is found...
 			if [ -f "/config/extended/logs/video/imvdb-link-missing/${lidarrArtistFolderNoDisambig}--mbid-${lidarrArtistMusicbrainzId}" ]; then
 				rm "/config/extended/logs/video/imvdb-link-missing/${lidarrArtistFolderNoDisambig}--mbid-${lidarrArtistMusicbrainzId}"
 			fi
@@ -575,7 +574,7 @@ VideoProcess () {
 				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: No videos found, skipping..."
 			else
 				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: Processing $imvdbArtistVideoCount Videos!"
-				find /config/extended/cache/imvdb -type f -empty -delete # delete empty files
+				find /config/extended/cache/imvdb -type f -empty -delete
 
 				imvdbProcessCount=0
 				for imvdbVideoData in $(ls /config/extended/cache/imvdb/$lidarrArtistMusicbrainzId--*.json); do
@@ -590,26 +589,31 @@ VideoProcess () {
 					echo "$lidarrArtistName" > /config/extended/cache/imvdb/$imvdbVideoArtistsSlug
 					imvdbVideoFeaturedArtistsSlug="$(cat "$imvdbVideoData" | jq -r .featured_artists[].slug)"
 					imvdbVideoYoutubeId="$(cat "$imvdbVideoData" | jq -r ".sources[] | select(.is_primary==true) | select(.source==\"youtube\") | .source_data")"
-					#"/config/extended/cache/musicbrainz/$lidarrArtistId--$lidarrArtistMusicbrainzId--recordings.json"
-					#echo "$imvdbVideoTitle :: $imvdbVideoYear :: $imvdbVideoYoutubeId :: $imvdbVideoArtistsSlug"
 					if [ -z "$imvdbVideoYoutubeId" ]; then
 						continue
 					fi
 					videoDownloadUrl="https://www.youtube.com/watch?v=$imvdbVideoYoutubeId"
-					plexVideoType="-video"
+
+					# Build Plex-compatible filename: "Artist - Title"
+					plexVideoFileName="${lidarrArtistNameSanitized} - ${videoTitleClean}"
 
 					if [ -d "$videoPath/$lidarrArtistFolderNoDisambig" ]; then
-						if [ -f "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${plexVideoType}.nfo" ]; then
-							if cat "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${plexVideoType}.nfo" | grep "source" | read; then
+						# Check for NFO with new naming
+						if [ -f "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo" ]; then
+							if cat "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo" | grep "source" | read; then
 								sleep 0
 							else
-								sed -i '$d' "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${plexVideoType}.nfo"
-								echo "	<source>youtube</source>" >> "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${plexVideoType}.nfo"
-								echo "</musicvideo>" >> "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${plexVideoType}.nfo"
-								tidy -w 2000 -i -m -xml "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${plexVideoType}.nfo" &>/dev/null
+								sed -i '$d' "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo"
+								echo "	<source>youtube</source>" >> "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo"
+								echo "</musicvideo>" >> "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo"
+								tidy -w 2000 -i -m -xml "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo" &>/dev/null
 							fi
 						fi
-						if [[ -n $(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -iname "${videoTitleClean}${plexVideoType}.mkv") ]] || [[ -n $(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -iname "${videoTitleClean}${plexVideoType}.mp4") ]]; then
+						# Check for existing video with new naming OR legacy "-video" naming
+						if [[ -n $(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -iname "${plexVideoFileName}.mkv") ]] || \
+						   [[ -n $(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -iname "${plexVideoFileName}.mp4") ]] || \
+						   [[ -n $(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -iname "${videoTitleClean}-video.mkv") ]] || \
+						   [[ -n $(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -iname "${videoTitleClean}-video.mp4") ]]; then
 							log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${imvdbVideoTitle} :: Previously Downloaded, skipping..."
 							continue
 						fi
@@ -620,7 +624,7 @@ VideoProcess () {
 							if [ -f /config/extended/cache/imvdb/$featuredArtistSlug ]; then
 								featuredArtistName="$(cat /config/extended/cache/imvdb/$featuredArtistSlug)"
 							fi
-							find /config/extended/cache/imvdb -type f -empty -delete # delete empty files
+							find /config/extended/cache/imvdb -type f -empty -delete
 							if [ -z "$featuredArtistName" ]; then
 								continue
 							fi
@@ -643,15 +647,15 @@ VideoProcess () {
 					videoSource="youtube"
 
 					log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${imvdbVideoTitle} :: $videoDownloadUrl..."
-					DownloadVideo "$videoDownloadUrl" "$videoTitleClean" "$plexVideoType" "IMVDB"
+					DownloadVideo "$videoDownloadUrl" "$plexVideoFileName"
 					if [ "$downloadFailed" = "true" ]; then
 						log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${imvdbArtistVideoCount} :: ${imvdbVideoTitle} :: Download failed, skipping..."
 						continue
 					fi
-					DownloadThumb "$imvdbVideoImage" "$videoTitleClean" "$plexVideoType" "IMVDB"
+					DownloadThumb "$imvdbVideoImage" "$plexVideoFileName"
 					VideoProcessWithSMA "IMVDB" "$imvdbVideoTitle"
-					VideoTagProcess "$videoTitleClean" "$plexVideoType" "$videoYear" "IMVDB"
-					VideoNfoWriter "$videoTitleClean" "$plexVideoType" "$imvdbVideoTitle" "" "imvdb" "$videoYear" "IMVDB" "$videoSource"
+					VideoTagProcess "$videoTitleClean" "$plexVideoFileName" "$videoYear" "IMVDB"
+					VideoNfoWriter "$plexVideoFileName" "" "$imvdbVideoTitle" "" "imvdb" "$videoYear" "IMVDB" "$videoSource"
 
 					if [ ! -d "$videoPath/$lidarrArtistFolderNoDisambig" ]; then
 						mkdir -p "$videoPath/$lidarrArtistFolderNoDisambig"
@@ -659,7 +663,6 @@ VideoProcess () {
 					fi
 
 					mv $videoDownloadPath/incomplete/* "$videoPath/$lidarrArtistFolderNoDisambig"/
-					# clean/clear download folder
 					rm -rf "$videoDownloadPath"/incomplete/*
 				done
 			fi
