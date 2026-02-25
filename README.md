@@ -1,3 +1,11 @@
+# Fork Notes
+My fork is just for fixing and enhancing the lidarr scripts.
+
+Changes:
+ - Integrate samhaswon's tidal-dl-ng changes (plus my own changes)
+ - Fix API version detection and other build/logging issues
+ - Updated video scripts to support Plex naming convention
+
 # arr-scripts
 
 Official Home of the scripts that were previously packaged with the "Extended" containers. Designed to be easily implemented/added to [Linuxserver.io](https://www.linuxserver.io/) containers.
