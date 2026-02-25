@@ -429,6 +429,7 @@ VideoProcess () {
 				if [ -n "$smaOutputFile" ]; then
 					curl -s "$videoThumbnailUrl" -o "$videoDownloadPath/poster.jpg"
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Tagging file as $videoFileName"
+					tmpTagFile="$videoDownloadPath/tagging-temp.mkv"
 					ffmpeg -y \
 						-i "$smaOutputFile" \
 						-c copy \
@@ -441,11 +442,11 @@ VideoProcess () {
 						-metadata ALBUMARTIST="$lidarrArtistName" \
 						-metadata ENCODED_BY="lidarr-extended" \
 						-attach "$videoDownloadPath/poster.jpg" -metadata:s:t mimetype=image/jpeg \
-						"$videoDownloadPath/$videoFileName" 2>&1 | tee -a "/config/logs/$logFileName"
-					chmod 666 "$videoDownloadPath/$videoFileName"
-					# Remove the pre-tagged source file if tagging succeeded
-					if [ -f "$videoDownloadPath/$videoFileName" ]; then
+						"$tmpTagFile" 2>&1 | tee -a "/config/logs/$logFileName"
+					if [ -f "$tmpTagFile" ]; then
 						rm "$smaOutputFile"
+						mv "$tmpTagFile" "$videoDownloadPath/$videoFileName"
+						chmod 666 "$videoDownloadPath/$videoFileName"
 					fi
 				fi
 			done < <(find "$videoDownloadPath/incomplete" -type f -regex ".*/.*\.\(mkv\|mp4\)" -print0)
