@@ -1,5 +1,5 @@
 #!/usr/bin/with-contenv bash
-scriptVersion="2.2"
+scriptVersion="2.3"
 scriptName="TidalVideoDownloader"
 
 #### Import Settings
@@ -233,6 +233,7 @@ VideoProcess () {
 		lidarrArtistPath="$(echo "${lidarrArtistData}" | jq -r " .path")"
 		lidarrArtistFolder="$(basename "${lidarrArtistPath}")"
 		lidarrArtistFolderNoDisambig="$(echo "$lidarrArtistFolder" | sed "s/ (.*)$//g" | sed "s/\.$//g")" # Plex Sanitization, remove disambiguation
+		lidarrArtistNameSanitized="$(echo "$lidarrArtistFolderNoDisambig" | sed 's% (.*)$%%g')"
 
 		artistGenres=""
 		OLDIFS="$IFS"
@@ -285,6 +286,10 @@ VideoProcess () {
 			videoType=""
    			# clean/clear incomplete download folder
    			rm -rf "$videoDownloadPath/incomplete"/*
+
+			# Build Plex-compatible filename: "Artist - Title"
+			plexVideoFileName="${lidarrArtistNameSanitized} - ${videoTitleClean}"
+			videoFileName="${plexVideoFileName}.mkv"
       
       			log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Processing..."
 
@@ -311,14 +316,25 @@ VideoProcess () {
 				continue
 			fi
 
-			videoFileName="${videoTitleClean}${videoType}.mkv"
 			existingFileSize=""
 			existingFile=""
+			existingFileNfo=""
+			existingFileJpg=""
 
-			if [ -d "$videoPath/$lidarrArtistFolderNoDisambig" ]; then 
-				existingFile="$(find "$videoPath/$lidarrArtistFolderNoDisambig" -type f -iname "${videoFileName}")"
-				existingFileNfo="$(find "$videoPath/$lidarrArtistFolderNoDisambig" -type f -iname "${videoTitleClean}${videoType}.nfo")"
-				existingFileJpg="$(find "$videoPath/$lidarrArtistFolderNoDisambig" -type f -iname "${videoTitleClean}${videoType}.jpg")"
+			if [ -d "$videoPath/$lidarrArtistFolderNoDisambig" ]; then
+				# Check for existing file using new Plex naming OR legacy naming
+				existingFile="$(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -type f \( \
+					-iname "${plexVideoFileName}.mkv" -o \
+					-iname "${videoTitleClean}${videoType}.mkv" \
+				\) | head -n1)"
+				existingFileNfo="$(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -type f \( \
+					-iname "${plexVideoFileName}.nfo" -o \
+					-iname "${videoTitleClean}${videoType}.nfo" \
+				\) | head -n1)"
+				existingFileJpg="$(find "$videoPath/$lidarrArtistFolderNoDisambig" -maxdepth 1 -type f \( \
+					-iname "${plexVideoFileName}.jpg" -o \
+					-iname "${videoTitleClean}${videoType}.jpg" \
+				\) | head -n1)"
 			fi
 			if [ -f "$existingFile" ]; then
 				existingFileSize=$(stat -c "%s" "$existingFile")
@@ -350,8 +366,6 @@ VideoProcess () {
 					echo  -n "$videoArtistName" > "/config/extended/cache/tidal-videos/$videoArtistId"
 				fi
 			done
-
-			
 
 			if [ ! -d "$videoDownloadPath/incomplete" ]; then
 				mkdir -p "$videoDownloadPath/incomplete"
@@ -463,12 +477,11 @@ VideoProcess () {
 				if [ $downloadedFileSize -gt $existingFileSize  ]; then
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Downloaded File is bigger than existing file ($downloadedFileSize -gt $existingFileSize), removing existing file to import the new file..."
 					rm "$existingFile"
-
 				fi
 			fi
 
 			log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Writing NFO"
-			nfo="$videoDownloadPath/${videoTitleClean}${videoType}.nfo"
+			nfo="$videoDownloadPath/${plexVideoFileName}.nfo"
 			if [ -f "$nfo" ]; then
 				rm "$nfo"
 			fi
@@ -495,13 +508,11 @@ VideoProcess () {
 			echo "		<artist>$lidarrArtistName</artist>" >> "$nfo"
 			echo "		<musicBrainzArtistID>$lidarrArtistMusicbrainzId</musicBrainzArtistID>" >> "$nfo"
 			echo "	</albumArtistCredits>" >> "$nfo"
-			echo "	<thumb>${videoTitleClean}${videoType}.jpg</thumb>" >> "$nfo"
+			echo "	<thumb>${plexVideoFileName}.jpg</thumb>" >> "$nfo"
 			echo "	<source>tidal</source>" >> "$nfo"
 			echo "</musicvideo>" >> "$nfo"
 			tidy -w 2000 -i -m -xml "$nfo" &>/dev/null
 			chmod 666 "$nfo"
-
-
 
 			if [ -f "$videoDownloadPath/$videoFileName" ]; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Moving Download to final destination"
@@ -519,8 +530,8 @@ VideoProcess () {
 						rm "$existingFileNfo"
 					fi
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Moving video nfo to final destination"
-					mv "$nfo" "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${videoType}.nfo"
-					chmod 666 "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${videoType}.nfo"
+					mv "$nfo" "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo"
+					chmod 666 "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.nfo"
 				fi
 
 				if [ -f "$videoDownloadPath/poster.jpg" ]; then
@@ -529,8 +540,8 @@ VideoProcess () {
 						rm "$existingFileJpg"
 					fi
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Moving video poster to final destination"
-					mv "$videoDownloadPath/poster.jpg" "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${videoType}.jpg"
-					chmod 666 "$videoPath/$lidarrArtistFolderNoDisambig/${videoTitleClean}${videoType}.jpg"
+					mv "$videoDownloadPath/poster.jpg" "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.jpg"
+					chmod 666 "$videoPath/$lidarrArtistFolderNoDisambig/${plexVideoFileName}.jpg"
 				fi
 			fi
 
