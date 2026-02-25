@@ -389,14 +389,11 @@ VideoProcess () {
 				continue
 			fi
 			
-			find "$videoDownloadPath/incomplete" -type f -regex ".*/.*\.\(mkv\|mp4\)"  -print0 | while IFS= read -r -d '' video; do
+			while IFS= read -r -d '' video; do
 				file="${video}"
-				filenoext="${file%.*}"
 				filename="$(basename "$video")"
-				extension="${filename##*.}"
 				filenamenoext="${filename%.*}"
 				mv "$file" "$videoDownloadPath/$filename"
-			
 
 				if [ -f "$videoDownloadPath/$filename" ]; then
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Download Complete!"
@@ -415,18 +412,25 @@ VideoProcess () {
 				if python3 /usr/local/sma/manual.py --config "/config/extended/sma.ini" -i "$videoDownloadPath/$filename" -nt; then
 					sleep 0.01
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Processed with SMA..."
-					rm  /usr/local/sma/config/*log*
+					rm /usr/local/sma/config/*log*
 				else
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: ERROR: SMA Processing Error"
 					rm "$videoDownloadPath/$filename"
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: INFO: deleted: $filename"
+					continue
 				fi
 
-				if [ -f "$videoDownloadPath/${filenamenoext}.mkv" ]; then
+				# SMA may have remuxed to mkv - find the processed file
+				smaOutputFile="$(find "$videoDownloadPath" -maxdepth 1 -type f -name "${filenamenoext}.mkv" | head -n1)"
+				if [ -z "$smaOutputFile" ]; then
+					smaOutputFile="$(find "$videoDownloadPath" -maxdepth 1 -type f -name "${filenamenoext}.mp4" | head -n1)"
+				fi
+
+				if [ -n "$smaOutputFile" ]; then
 					curl -s "$videoThumbnailUrl" -o "$videoDownloadPath/poster.jpg"
-					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Tagging file"
+					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Tagging file as $videoFileName"
 					ffmpeg -y \
-						-i "$videoDownloadPath/${filenamenoext}.mkv" \
+						-i "$smaOutputFile" \
 						-c copy \
 						-metadata TITLE="$videoTitle" \
 						-metadata DATE_RELEASE="$videoDate" \
@@ -437,15 +441,14 @@ VideoProcess () {
 						-metadata ALBUMARTIST="$lidarrArtistName" \
 						-metadata ENCODED_BY="lidarr-extended" \
 						-attach "$videoDownloadPath/poster.jpg" -metadata:s:t mimetype=image/jpeg \
-						"$videoDownloadPath/$videoFileName"  2>&1 | tee -a "/config/logs/$logFileName"
+						"$videoDownloadPath/$videoFileName" 2>&1 | tee -a "/config/logs/$logFileName"
 					chmod 666 "$videoDownloadPath/$videoFileName"
-				fi
-				if [ -f "$videoDownloadPath/$videoFileName" ]; then
-					if [ -f "$videoDownloadPath/${filenamenoext}.mkv" ]; then
-						rm "$videoDownloadPath/${filenamenoext}.mkv"
+					# Remove the pre-tagged source file if tagging succeeded
+					if [ -f "$videoDownloadPath/$videoFileName" ]; then
+						rm "$smaOutputFile"
 					fi
 				fi
-			done
+			done < <(find "$videoDownloadPath/incomplete" -type f -regex ".*/.*\.\(mkv\|mp4\)" -print0)
 
 			if [ "$downloadFailed" == "true" ]; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Skipping due to failed download..."
