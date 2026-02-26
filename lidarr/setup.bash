@@ -1,5 +1,5 @@
 #!/usr/bin/with-contenv bash
-scriptVersion="1.5.1"
+scriptVersion="1.5.2"
 SMA_PATH="/usr/local/sma"
 
 if [ -f /config/setup_version.txt ]; then
