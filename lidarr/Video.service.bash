@@ -14,8 +14,8 @@ verifyConfig () {
 		videoContainer="mkv"
 	fi
 
-	if [ -z "$disableImvd" ]; then
-		disableImvd="false"
+	if [ -z "$enableImvdb" ]; then
+		enableImvdb="true"
 	fi
 
 	if [ "$enableVideo" != "true" ]; then
@@ -24,8 +24,8 @@ verifyConfig () {
 		sleep infinity
 	fi
 
-		if [ "$disableImvd" != "false" ]; then
-		log "Script is not enabled, enable by setting disableImvd to \"false\" by modifying the \"/config/extended.conf\" config file..."
+	if [ "$enableImvdb" != "true" ]; then
+		log "IMVDB is disabled, enable by setting enableImvdb to \"true\" in \"/config/extended.conf\"..."
 		log "Sleeping (infinity)"
 		sleep infinity
 	fi
