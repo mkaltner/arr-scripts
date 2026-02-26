@@ -138,10 +138,16 @@ ImvdbCache () {
 			break
 		fi
 		artistImvdbVideoUrls=$(cat "$imvdbResponseFile" | grep "$artistImvdbSlug" | grep -Eoi '<a [^>]+>' | grep -Eo 'href="[^\"]+"' | grep -Eo '(http|https)://[^"]+' | grep -i ".com/video/$artistImvdbSlug/" | sed "s%/[0-9]$%%g" | sort -u)
-		if echo "$artistImvdbVideoUrls" | grep -i "imvdb.com" | read; then
+		if [ "$imvdbHttpCode" == "200" ]; then
+			# Page loaded successfully — empty video list is valid, not a connection error
+			if echo "$artistImvdbVideoUrls" | grep -i "imvdb.com" | read; then
+				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: Found video URLs"
+			else
+				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: No videos found on IMVDB page, skipping..."
+			fi
 			break
 		else
-			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ERROR :: Cannot connect to imvdb, retrying..."
+			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ERROR :: Cannot connect to imvdb (HTTP $imvdbHttpCode), retrying..."
 			sleep 0.5
 		fi
 		if [ $count == 10 ]; then
@@ -581,16 +587,42 @@ VideoProcess () {
 		artistImvdbUrl=$(echo $lidarrArtistData | jq -r '.links[] | select(.name=="imvdb") | .url')
 		artistImvdbSlug=$(basename "$artistImvdbUrl")
 
+		# Fallback: derive slug from artist name if no IMVDB link in Lidarr
+		imvdbFallbackTransientError="false"
+		if [ -z "$artistImvdbSlug" ]; then
+			artistImvdbSlugDerived=$(echo "$lidarrArtistName" \
+				| tr '[:upper:]' '[:lower:]' \
+				| sed 's/[^a-z0-9 ]//g' \
+				| sed 's/ \+/-/g' \
+				| sed 's/^-//;s/-$//')
+			fallbackUrl="https://imvdb.com/n/$artistImvdbSlugDerived"
+			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: No link in Lidarr, trying derived slug: $artistImvdbSlugDerived"
+			fallbackHttpCode=$(curl -s -o /dev/null -w "%{http_code}" "$fallbackUrl" \
+				-H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0')
+			if [ "$fallbackHttpCode" == "200" ]; then
+				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: Fallback slug resolved successfully: $artistImvdbSlugDerived"
+				artistImvdbSlug="$artistImvdbSlugDerived"
+			elif [ "$fallbackHttpCode" == "404" ]; then
+				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: Fallback slug not found (HTTP 404), artist not on IMVDB..."
+			else
+				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: Fallback slug returned HTTP $fallbackHttpCode, skipping this run..."
+				imvdbFallbackTransientError="true"
+			fi
+		fi
+
 		if [ -z "$artistImvdbSlug" ]; then
 			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ERROR :: No IMVDB artist link found, skipping..."
-			if [ ! -d "/config/extended/logs/video/imvdb-link-missing" ]; then
-				mkdir -p "/config/extended/logs/video/imvdb-link-missing"
-				chmod 777 "/config/extended/logs/video"
-				chmod 777 "/config/extended/logs/video/imvdb-link-missing"
-			fi
-			if [ -d "/config/extended/logs/video/imvdb-link-missing" ]; then
-				log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: Logging missing IMVDB artist in folder: /config/extended/logs/video/imvdb-link-missing"
-				touch "/config/extended/logs/video/imvdb-link-missing/${lidarrArtistFolderNoDisambig}--mbid-${lidarrArtistMusicbrainzId}"
+			# Only log to missing if we got a definitive 404 — not on transient server errors
+			if [ "$imvdbFallbackTransientError" != "true" ]; then
+				if [ ! -d "/config/extended/logs/video/imvdb-link-missing" ]; then
+					mkdir -p "/config/extended/logs/video/imvdb-link-missing"
+					chmod 777 "/config/extended/logs/video"
+					chmod 777 "/config/extended/logs/video/imvdb-link-missing"
+				fi
+				if [ -d "/config/extended/logs/video/imvdb-link-missing" ]; then
+					log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: Logging missing IMVDB artist in folder: /config/extended/logs/video/imvdb-link-missing"
+					touch "/config/extended/logs/video/imvdb-link-missing/${lidarrArtistFolderNoDisambig}--mbid-${lidarrArtistMusicbrainzId}"
+				fi
 			fi
 			continue
 		else
