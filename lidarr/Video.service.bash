@@ -1,5 +1,5 @@
 #!/usr/bin/with-contenv bash
-scriptVersion="4.0"
+scriptVersion="4.1"
 scriptName="Video"
 
 ### Import Settings
@@ -119,7 +119,25 @@ ImvdbCache () {
 	attemptError="false"
 	until false; do
 		count=$(( $count + 1 ))
-		artistImvdbVideoUrls=$(curl -s "https://imvdb.com/n/$artistImvdbSlug" --compressed -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Upgrade-Insecure-Requests: 1' -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Site: none' -H 'Sec-Fetch-User: ?1' | grep "$artistImvdbSlug" | grep -Eoi '<a [^>]+>' | grep -Eo 'href="[^\"]+"' | grep -Eo '(http|https)://[^"]+' | grep -i ".com/video/$artistImvdbSlug/" | sed "s%/[0-9]$%%g" | sort -u)
+		imvdbResponseFile="/tmp/imvdb_artist_response"
+		imvdbHttpCode=$(curl -s -o "$imvdbResponseFile" -w "%{http_code}" "https://imvdb.com/n/$artistImvdbSlug" --compressed \
+			-H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0' \
+			-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
+			-H 'Accept-Language: en-US,en;q=0.5' \
+			-H 'Accept-Encoding: gzip, deflate, br' \
+			-H 'DNT: 1' \
+			-H 'Connection: keep-alive' \
+			-H 'Upgrade-Insecure-Requests: 1' \
+			-H 'Sec-Fetch-Dest: document' \
+			-H 'Sec-Fetch-Mode: navigate' \
+			-H 'Sec-Fetch-Site: none' \
+			-H 'Sec-Fetch-User: ?1')
+		if [ "$imvdbHttpCode" == "502" ] || [ "$imvdbHttpCode" == "503" ] || [ "$imvdbHttpCode" == "429" ]; then
+			log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ERROR :: Rate limited or server error (HTTP $imvdbHttpCode), skipping artist..."
+			attemptError="true"
+			break
+		fi
+		artistImvdbVideoUrls=$(cat "$imvdbResponseFile" | grep "$artistImvdbSlug" | grep -Eoi '<a [^>]+>' | grep -Eo 'href="[^\"]+"' | grep -Eo '(http|https)://[^"]+' | grep -i ".com/video/$artistImvdbSlug/" | sed "s%/[0-9]$%%g" | sort -u)
 		if echo "$artistImvdbVideoUrls" | grep -i "imvdb.com" | read; then
 			break
 		else
@@ -177,11 +195,45 @@ ImvdbCache () {
 			until false; do
 				count=$(( $count + 1 ))
 				if [ ! -f "$imvdbVideoData" ]; then
-					imvdbVideoId=$(curl -s "$imvdbVideoUrl" --compressed -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Upgrade-Insecure-Requests: 1' -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Site: none' -H 'Sec-Fetch-User: ?1' | grep "<p>ID:" | grep -o "[[:digit:]]*")
+					imvdbVideoPageFile="/tmp/imvdb_video_response"
+					imvdbVideoHttpCode=$(curl -s -o "$imvdbVideoPageFile" -w "%{http_code}" "$imvdbVideoUrl" --compressed \
+						-H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0' \
+						-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
+						-H 'Accept-Language: en-US,en;q=0.5' \
+						-H 'Accept-Encoding: gzip, deflate, br' \
+						-H 'DNT: 1' \
+						-H 'Connection: keep-alive' \
+						-H 'Upgrade-Insecure-Requests: 1' \
+						-H 'Sec-Fetch-Dest: document' \
+						-H 'Sec-Fetch-Mode: navigate' \
+						-H 'Sec-Fetch-Site: none' \
+						-H 'Sec-Fetch-User: ?1')
+					if [ "$imvdbVideoHttpCode" == "502" ] || [ "$imvdbVideoHttpCode" == "503" ] || [ "$imvdbVideoHttpCode" == "429" ]; then
+						log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${artistImvdbVideoUrlsCount} :: ERROR :: Rate limited or server error (HTTP $imvdbVideoHttpCode), skipping..."
+						break
+					fi
+					imvdbVideoId=$(cat "$imvdbVideoPageFile" | grep "<p>ID:" | grep -o "[[:digit:]]*")
 					imvdbVideoJsonUrl="https://imvdb.com/api/v1/video/$imvdbVideoId?include=sources,featured,credits"
-					log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${artistImvdbVideoUrlsCount} ::  Downloading Video data"
+					log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${artistImvdbVideoUrlsCount} :: Downloading Video data"
 
-					curl -s "$imvdbVideoJsonUrl" --compressed -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0' -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Upgrade-Insecure-Requests: 1' -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Site: none' -H 'Sec-Fetch-User: ?1' -o "$imvdbVideoData"
+					imvdbJsonHttpCode=$(curl -s -w "%{http_code}" --compressed \
+						-H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0' \
+						-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
+						-H 'Accept-Language: en-US,en;q=0.5' \
+						-H 'Accept-Encoding: gzip, deflate, br' \
+						-H 'DNT: 1' \
+						-H 'Connection: keep-alive' \
+						-H 'Upgrade-Insecure-Requests: 1' \
+						-H 'Sec-Fetch-Dest: document' \
+						-H 'Sec-Fetch-Mode: navigate' \
+						-H 'Sec-Fetch-Site: none' \
+						-H 'Sec-Fetch-User: ?1' \
+						-o "$imvdbVideoData" "$imvdbVideoJsonUrl")
+					if [ "$imvdbJsonHttpCode" == "502" ] || [ "$imvdbJsonHttpCode" == "503" ] || [ "$imvdbJsonHttpCode" == "429" ]; then
+						log "${processCount}/${lidarrArtistIdsCount} :: $lidarrArtistName :: IMVDB :: ${imvdbProcessCount}/${artistImvdbVideoUrlsCount} :: ERROR :: Rate limited or server error (HTTP $imvdbJsonHttpCode), skipping..."
+						rm -f "$imvdbVideoData"
+						break
+					fi
 					sleep 0.5
 				fi
 				if [ -f "$imvdbVideoData" ]; then
