@@ -293,7 +293,7 @@ VideoProcess () {
       
       			log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Processing..."
 
-			if echo "$videoTitle" | grep -i "(.*lyric.*video\|lyric.*video)" | read; then
+			if echo "$videoTitle" | grep -i "\(.*lyric.*\)" | read; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video Match Found!"
 				if [ "$skipLyricVideos" == "true" ]; then
 					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video, skipping..."
