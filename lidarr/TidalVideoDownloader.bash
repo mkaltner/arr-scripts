@@ -72,12 +72,6 @@ TidalClientSetup () {
 	if ! ls "${tidalDlNgConfigDir}"/*auth*.json "${tidalDlNgConfigDir}"/*token*.json 1>/dev/null 2>&1; then
 		log "TIDAL :: ERROR :: Loading client for required authentication, please authenticate, then exit the client..."
 		NotifyWebhook "FatalError" "TIDAL requires authentication, please authenticate now (check logs)"
-		if [ "$telegramBotEnable" == "true" ]; then
-			curl -s -X POST "https://api.telegram.org/bot${telegramBotToken}/sendMessage" \
-				-d chat_id="${telegramUserChatID}" \
-				-d text="🎵 Tidal authentication required on $(hostname) - please check logs and re-authenticate" \
-				-d parse_mode="HTML" &>/dev/null
-		fi
 		if command -v script >/dev/null 2>&1; then
 			script -q -c "PYTHONUNBUFFERED=1 XDG_CONFIG_HOME=/config/extended tidal-dl-ng login" /dev/null
 		else
@@ -299,30 +293,23 @@ VideoProcess () {
       
       			log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Processing..."
 
-			if echo "$videoTitle" | grep -i "official" | grep -i "video" | read; then
+			if echo "$videoTitle" | grep -i "(.*lyric.*video\|lyric.*video)" | read; then
+				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video Match Found!"
+				if [ "$skipLyricVideos" == "true" ]; then
+					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video, skipping..."
+					continue
+				fi
+				videoType="-lyrics"
+			elif echo "$videoTitle" | grep -i "official" | grep -i "video" | read; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Official Music Video Match Found!"
 				videoType="-video"
-			elif echo "$videoTitle" | grep -i "official" | grep -i "lyric" | read; then
-				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Official Lyric Video Match Found!"
-				if [ "$skipLyricVideos" == "true" ]; then
-					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Skipping lyric video..."
-					continue
-				fi
-				videoType="-lyrics"
-			elif echo "$videoTitle" | grep -i "video" | grep -i "lyric" | read; then
-				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Official Lyric Video Match Found!"
-				if [ "$skipLyricVideos" == "true" ]; then
-					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Skipping lyric video..."
-					continue
-				fi
-				videoType="-lyrics"
 			elif echo "$videoTitle" | grep -i "4k upgrade" | read; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: 4K Upgrade Found!"
 				videoType="-video"
 			elif echo "$videoTitle" | grep -i "\(.*live.*\)" | read; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Live Video Found!"
 				if [ "$skipLiveVideos" == "true" ]; then
-					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Skipping live video..."
+					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Live Video, skipping..."
 					continue
 				fi
 				videoType="-live"
