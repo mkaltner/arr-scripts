@@ -293,23 +293,16 @@ VideoProcess () {
       
       			log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Processing..."
 
-			if echo "$videoTitle" | grep -i "official" | grep -i "video" | read; then
+			if echo "$videoTitle" | grep -i "lyric" | read; then
+				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video Match Found!"
+				if [ "$skipLyricVideos" == "true" ]; then
+					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video, skipping..."
+					continue
+				fi
+				videoType="-lyrics"
+			elif echo "$videoTitle" | grep -i "official" | grep -i "video" | read; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Official Music Video Match Found!"
 				videoType="-video"
-			elif echo "$videoTitle" | grep -i "official" | grep -i "lyric" | read; then
-				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Official Lyric Video Match Found!"
-				if [ "$skipLyricVideos" == "true" ]; then
-					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video, skipping..."
-					continue
-				fi
-				videoType="-lyrics"
-			elif echo "$videoTitle" | grep -i "video" | grep -i "lyric" | read; then
-				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Official Lyric Video Match Found!"
-				if [ "$skipLyricVideos" == "true" ]; then
-					log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: Lyric Video, skipping..."
-					continue
-				fi
-				videoType="-lyrics"
 			elif echo "$videoTitle" | grep -i "4k upgrade" | read; then
 				log "$processCount/$lidarrArtistCount :: $lidarrArtistName :: $tidalVideoProcessNumber/$tidalVideoIdsCount :: $videoTitle ($id) :: 4K Upgrade Found!"
 				videoType="-video"
